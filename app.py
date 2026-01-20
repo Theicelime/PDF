@@ -8,7 +8,7 @@ from datetime import datetime
 BASE_DIR = "data_store"
 EXPIRY_HOURS = 24 
 
-# 从 Secrets 获取安全配置
+# 从 Streamlit Cloud 的 Secrets 中读取安全配置
 try:
     ADMIN_PWD = st.secrets["admin_password"]
     ADMIN_URL_KEY = st.secrets["admin_url_key"]
@@ -23,7 +23,6 @@ if not os.path.exists(BASE_DIR):
 
 def get_user_path(code, folder_type):
     """为每个口令创建独立子目录"""
-    # 仅保留字母和数字
     safe_code = "".join([c for c in code if c.isalnum()])
     path = os.path.join(BASE_DIR, safe_code, folder_type)
     if not os.path.exists(path):
@@ -43,7 +42,7 @@ def cleanup_expired_data():
 cleanup_expired_data()
 
 # --- 3. 页面配置 ---
-st.set_page_config(page_title="PDF-PPT 交换系统", layout="centered")
+st.set_page_config(page_title="PDF-PPT 互助交换站", layout="centered")
 
 # 获取 URL 参数
 query_params = st.query_params
@@ -70,19 +69,17 @@ if view_mode == ADMIN_URL_KEY:
         for code in all_codes:
             with st.expander(f"📦 用户口令: {code}", expanded=True):
                 col_a, col_b = st.columns(2)
-                
                 with col_a:
                     st.write("**📥 待处理 PDF:**")
                     pdf_dir = get_user_path(code, "pdfs")
                     pdf_files = os.listdir(pdf_dir)
                     for f_name in pdf_files:
-                        # 优化点 1：管理员下载时，文件名自动变为 "口令_原文件名.pdf"
                         download_name = f"{code}_{f_name}"
                         with open(os.path.join(pdf_dir, f_name), "rb") as f:
                             st.download_button(
                                 label=f"下载 {f_name}",
                                 data=f,
-                                file_name=download_name,  # 这里的 file_name 决定了你保存到本地的名字
+                                file_name=download_name,
                                 mime="application/pdf",
                                 key=f"dl_{code}_{f_name}"
                             )
@@ -94,10 +91,10 @@ if view_mode == ADMIN_URL_KEY:
                         ppt_dir = get_user_path(code, "ppts")
                         with open(os.path.join(ppt_dir, new_ppt.name), "wb") as f:
                             f.write(new_ppt.getbuffer())
-                        st.success(f"已发送 PPT: {new_ppt.name}")
+                        st.success(f"已发送 PPT")
 
         st.sidebar.markdown("---")
-        if st.sidebar.button("🔴 清空服务器所有数据"):
+        if st.sidebar.button("🔴 清空所有服务器文件"):
             shutil.rmtree(BASE_DIR)
             os.makedirs(BASE_DIR)
             st.rerun()
@@ -107,43 +104,55 @@ if view_mode == ADMIN_URL_KEY:
 
 # B. 普通用户页面
 else:
-    st.title("📂 PDF-PPT 交换中心")
-    user_code = st.text_input("🔑 请输入您的专属提取码", placeholder="在此输入口令", type="default")
+    st.title("📂 PDF-PPT 互助交换站")
+    
+    # --- 免责声明模块 ---
+    with st.expander("📢 使用前必读：免责声明与隐私提醒", expanded=True):
+        st.markdown("""
+        1. **互助性质**：本站仅为公益互助演示，旨在利用闲置会员资源帮助有需要的同学，**严禁上传敏感、保密、非法或高度隐私的文件**。
+        2. **隐私提醒**：请设置**复杂口令**（如：字母+数字）以防文件被他人误领。请勿使用过于简单的数字口令。
+        3. **自动销毁**：所有文件仅在服务器保留 **24小时**，过期将自动物理粉碎。请及时提取转换结果。
+        4. **责任界定**：管理员承诺不存档、不外传文件。如因用户设置弱口令导致文件被第三方截获，或因不可抗力导致数据丢失，本站不承担相关责任。
+        5. **手动删除**：提取完成后，建议联系管理员或等待系统自动清理。
+        """)
+    
+    st.markdown("---")
+    user_code = st.text_input("🔑 请输入您的专属提取码（建议使用字母+数字）", placeholder="例如：Alex8899", type="default")
     
     if user_code:
-        if len(user_code) < 3:
-            st.warning("提取码过短。")
+        if len(user_code) < 4:
+            st.warning("⚠️ 提取码过短，为了您的文件安全，请设置至少4位。")
         else:
-            t1, t2 = st.tabs(["📤 我要上传", "📥 我要提取"])
+            t1, t2 = st.tabs(["📤 上传 PDF", "📥 提取 PPT"])
             
             with t1:
-                st.info("上传 PDF 后，请告知管理员处理。")
-                pdf_file = st.file_uploader("选择 PDF 文件", type=["pdf"])
+                st.warning("🚀 请确保文件不含个人敏感信息（如身份证号、财务报表等）。")
+                pdf_file = st.file_uploader("选择 PDF 文件 (Max: 200MB)", type=["pdf"])
                 if pdf_file:
                     pdf_save_path = os.path.join(get_user_path(user_code, "pdfs"), pdf_file.name)
                     with open(pdf_save_path, "wb") as f:
                         f.write(pdf_file.getbuffer())
-                    st.success(f"文件 {pdf_file.name} 上传成功！")
+                    st.success(f"✅ 文件 {pdf_file.name} 已上传！请等待管理员处理。")
+                    st.balloons()
             
             with t2:
                 ppt_dir = get_user_path(user_code, "ppts")
                 ppt_files = os.listdir(ppt_dir)
                 if ppt_files:
-                    st.write("✅ 转换完成，请下载：")
+                    st.write("✨ 转换已完成，请及时下载：")
                     for pf in ppt_files:
                         with open(os.path.join(ppt_dir, pf), "rb") as f:
-                            # 优化点 2：用户下载时保持 PPT 原名，并明确指定 PPTX 的 MIME 类型
                             st.download_button(
-                                label=f"点击下载 {pf}",
+                                label=f"💾 点击下载 {pf}",
                                 data=f,
                                 file_name=pf,
                                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                                 key=f"user_dl_{pf}"
                             )
                 else:
-                    st.info("暂未发现处理好的 PPT，请稍后再来。")
+                    st.info("⌛ 暂无处理好的 PPT。如果刚刚上传，请稍等或稍后刷新页面。")
     else:
-        st.info("请输入提取码以开始。")
+        st.info("💡 在上方输入提取码即可开始。请记住您的提取码，它是找回文件的唯一凭证。")
 
     st.markdown("---")
-    st.caption("隐私保护：文件将在 24 小时后自动销毁。")
+    st.caption("🔒 安全模式已开启：所有传输均经过 HTTPS 加密 | 24小时自动销毁记录")
