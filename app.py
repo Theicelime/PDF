@@ -4,127 +4,131 @@ import time
 import shutil
 from datetime import datetime
 
-# --- 配置 ---
-BASE_DIR = "data_store"  # 所有数据的根目录
-ADMIN_PASSWORD = "boss666"  # 管理员进入后台的密码
-EXPIRY_HOURS = 24  # 文件保留时间
+# --- 1. 配置与安全 ---
+BASE_DIR = "data_store"
+EXPIRY_HOURS = 24 
 
-# 确保根目录存在
+# 从 Streamlit Cloud 的 Secrets 中读取安全配置
+try:
+    ADMIN_PWD = st.secrets["admin_password"]
+    ADMIN_URL_KEY = st.secrets["admin_url_key"]
+except Exception:
+    # 如果没设置 Secrets，给一个非常复杂的随机默认值，确保安全
+    ADMIN_PWD = "STRICT_LOCK_MODE_ENABLED_123456789"
+    ADMIN_URL_KEY = "NOT_SET_YET"
+
 if not os.path.exists(BASE_DIR):
     os.makedirs(BASE_DIR)
 
-# --- 工具函数 ---
+# --- 2. 工具函数 ---
 
 def get_user_path(code, folder_type):
-    """根据口令生成路径: data_store/口令/pdfs 或 ppts"""
-    path = os.path.join(BASE_DIR, code, folder_type)
+    """为每个口令创建独立子目录"""
+    # 仅保留字母和数字，防止路径注入攻击
+    safe_code = "".join([c for c in code if c.isalnum()])
+    path = os.path.join(BASE_DIR, safe_code, folder_type)
     if not os.path.exists(path):
         os.makedirs(path)
     return path
 
 def cleanup_expired_data():
-    """清理超过24小时的文件夹"""
+    """清理过期文件"""
     now = time.time()
     if os.path.exists(BASE_DIR):
         for code_folder in os.listdir(BASE_DIR):
             dir_path = os.path.join(BASE_DIR, code_folder)
             if os.path.isdir(dir_path):
-                # 检查文件夹的最后修改时间
+                # 如果文件夹创建时间超过 24 小时
                 if os.path.getmtime(dir_path) < now - (EXPIRY_HOURS * 3600):
                     shutil.rmtree(dir_path)
 
-# 每次运行先清理旧数据
+# 自动执行清理
 cleanup_expired_data()
 
-# --- 界面排版 ---
-st.set_page_config(page_title="私人文件交换站", layout="wide")
-st.title("🔐 私人 PDF-PPT 文件交换站")
+# --- 3. 路由逻辑 ---
+# 获取 URL 参数，例如 ?view=xxx
+query_params = st.query_params
+view_mode = query_params.get("view", "user")
 
-# 侧边栏
-st.sidebar.header("身份验证")
-role = st.sidebar.radio("选择角色", ["我是客户", "我是管理员"])
+# --- 4. 界面逻辑 ---
+st.set_page_config(page_title="私人文件交换系统", layout="centered")
 
-# --------------------------
-# 角色 1：客户界面
-# --------------------------
-if role == "我是客户":
-    user_code = st.text_input("请输入您的专属口令 (用于区分彼此的文件):", type="password")
+# 管理员视图：只有 URL 匹配 admin_url_key 时才激活
+if view_mode == ADMIN_URL_KEY and ADMIN_URL_KEY != "NOT_SET_YET":
+    st.title("🛡️ 管理后台")
+    pwd_input = st.text_input("认证密钥", type="password")
     
-    if user_code:
-        st.info(f"当前口令：{user_code} (请牢记，下次凭此口令取回 PPT)")
+    if pwd_input == ADMIN_PWD:
+        st.success("认证成功，欢迎回来。")
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("📤 上传 PDF")
-            uploaded_pdf = st.file_uploader("上传需要转换的 PDF", type=["pdf"])
-            if uploaded_pdf:
-                save_path = get_user_path(user_code, "pdfs")
-                # 文件名增加时间戳，防止重名
-                timestamp = datetime.now().strftime("%H%M%S_")
-                final_name = timestamp + uploaded_pdf.name
-                full_path = os.path.join(save_path, final_name)
-                
-                with open(full_path, "wb") as f:
-                    f.write(uploaded_pdf.getbuffer())
-                st.success(f"上传成功！文件名：{final_name}")
+        if os.path.exists(BASE_DIR):
+            all_codes = [d for d in os.listdir(BASE_DIR) if os.path.isdir(os.path.join(BASE_DIR, d))]
+        else:
+            all_codes = []
 
-        with col2:
-            st.subheader("📥 提取 PPT")
-            ppt_path = get_user_path(user_code, "ppts")
-            ppt_files = os.listdir(ppt_path)
-            
-            if ppt_files:
-                for ppt_file in ppt_files:
-                    with open(os.path.join(ppt_path, ppt_file), "rb") as f:
-                        st.download_button(label=f"💾 下载 {ppt_file}", data=f, file_name=ppt_file)
-            else:
-                st.warning("暂无可下载的 PPT，请等待管理员处理。")
-    else:
-        st.warning("请输入口令以开启您的私人空间。")
-
-# --------------------------
-# 角色 2：管理员界面
-# --------------------------
-else:
-    admin_pwd = st.sidebar.text_input("管理员密码", type="password")
-    if admin_pwd == ADMIN_PASSWORD:
-        st.header("⚡ 管理员工作台")
-        
-        # 获取所有有数据的口令文件夹
-        all_codes = [d for d in os.listdir(BASE_DIR) if os.path.isdir(os.path.join(BASE_DIR, d))]
-        
         if not all_codes:
-            st.write("目前没有任何客户上传文件。")
+            st.info("当前暂无用户上传数据。")
         
         for code in all_codes:
-            with st.expander(f"口令【{code}】的文件列表", expanded=True):
-                c1, c2 = st.columns(2)
-                
-                # 待处理区域
-                with c1:
-                    st.write("📄 待下载 PDF:")
+            with st.expander(f"📦 用户口令: {code}", expanded=False):
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.write("**客户上传的 PDF:**")
                     pdf_dir = get_user_path(code, "pdfs")
-                    pdfs = os.listdir(pdf_dir)
-                    for pdf in pdfs:
-                        with open(os.path.join(pdf_dir, pdf), "rb") as f:
-                            st.download_button(f"下载 {pdf}", f, file_name=pdf, key=f"dl_{pdf}")
+                    files = os.listdir(pdf_dir)
+                    for f_name in files:
+                        with open(os.path.join(pdf_dir, f_name), "rb") as f:
+                            st.download_button(f"下载 {f_name}", f, key=f"dl_{code}_{f_name}")
                 
-                # 回传区域
-                with c2:
-                    st.write("📤 回传 PPT:")
-                    new_ppt = st.file_uploader(f"上传 PPT 到口令【{code}】", type=["pptx", "ppt"], key=f"up_{code}")
+                with col_b:
+                    st.write("**回传 PPT 给客户:**")
+                    new_ppt = st.file_uploader(f"上传 PPT ({code})", type=["pptx", "ppt"], key=f"up_{code}")
                     if new_ppt:
-                        ppt_save_dir = get_user_path(code, "ppts")
-                        with open(os.path.join(ppt_save_dir, new_ppt.name), "wb") as f:
+                        ppt_dir = get_user_path(code, "ppts")
+                        with open(os.path.join(ppt_dir, new_ppt.name), "wb") as f:
                             f.write(new_ppt.getbuffer())
-                        st.success(f"已发送给客户【{code}】")
-                        
-        st.divider()
-        if st.button("🔴 强制清空所有服务器文件"):
+                        st.success(f"已存入 {code}")
+
+        st.sidebar.markdown("---")
+        if st.sidebar.button("🔴 清空所有服务器文件"):
             shutil.rmtree(BASE_DIR)
             os.makedirs(BASE_DIR)
             st.rerun()
+    elif pwd_input != "":
+        st.error("密钥无效")
 
-    elif admin_pwd != "":
-        st.error("管理员密码错误")
+# 普通用户视图
+else:
+    st.title("📂 PDF-PPT 交换中心")
+    st.write("请在下方输入提取码，上传 PDF 或提取转换好的 PPT。")
+    
+    user_code = st.text_input("🔑 输入您的专属提取码", placeholder="例如: abc123", type="default")
+    
+    if user_code:
+        if len(user_code) < 3:
+            st.warning("提取码太短，请设置 3 位以上。")
+        else:
+            t1, t2 = st.tabs(["📤 上传 PDF", "📥 提取 PPT"])
+            
+            with t1:
+                pdf_file = st.file_uploader("选择要转换的 PDF", type=["pdf"])
+                if pdf_file:
+                    save_path = os.path.join(get_user_path(user_code, "pdfs"), pdf_file.name)
+                    with open(save_path, "wb") as f:
+                        f.write(pdf_file.getbuffer())
+                    st.success("上传成功！请告知管理员进行处理。")
+            
+            with t2:
+                ppt_dir = get_user_path(user_code, "ppts")
+                ppt_files = os.listdir(ppt_dir)
+                if ppt_files:
+                    for pf in ppt_files:
+                        with open(os.path.join(ppt_dir, pf), "rb") as f:
+                            st.download_button(f"💾 下载 {pf}", f, file_name=pf, key=f"user_dl_{pf}")
+                else:
+                    st.info("此处暂无文件。如果刚上传，请等待管理员处理。")
+    else:
+        st.info("请输入提取码以进入您的私人空间。")
+
+    st.markdown("---")
+    st.caption("隐私保护：文件将在 24 小时后自动销毁。")
