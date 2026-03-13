@@ -6,7 +6,9 @@ from datetime import datetime
 
 # --- 1. 配置与安全 ---
 BASE_DIR = "data_store"
-EXPIRY_HOURS = 72  # <--- 修改点 1: 自动删除时间改为 72 小时
+EXPIRY_HOURS = 72  
+# 小红书原笔记链接
+XHS_LINK = "https://www.xiaohongshu.com/explore/696f27e7000000000a03ee45?xsec_token=ABft3QO37w_LDTt8J5zePSaog2TSYY1qVxGckdEZeuUpc=&xsec_source=pc_user"
 
 # 从 Streamlit Cloud 的 Secrets 中读取安全配置
 try:
@@ -30,7 +32,7 @@ def get_user_path(code, folder_type):
     return path
 
 def get_file_time(file_path):
-    """<--- 修改点 2: 获取并格式化文件时间"""
+    """获取并格式化文件时间"""
     if os.path.exists(file_path):
         ts = os.path.getmtime(file_path)
         return datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M')
@@ -74,8 +76,7 @@ if view_mode == ADMIN_URL_KEY:
         if not raw_codes:
             st.info("当前暂无用户数据")
         
-        # <--- 修改点 3: 数据预处理与排序
-        # 逻辑：判断该用户目录下 ppt 文件夹是否有文件
+        # 数据预处理与排序
         user_data_list = []
         for code in raw_codes:
             ppt_dir = get_user_path(code, "ppts")
@@ -94,10 +95,9 @@ if view_mode == ADMIN_URL_KEY:
             code = item["code"]
             is_done = item["processed"]
             
-            # <--- 修改点 3: 视觉区分状态
+            # 视觉区分状态
             status_icon = "✅" if is_done else "⏳"
             status_label = "已回传" if is_done else "待处理"
-            # 只有待处理的默认展开，已完成的默认折叠
             
             with st.expander(f"{status_icon} [{status_label}] 用户口令: {code}", expanded=not is_done):
                 col_a, col_b = st.columns(2)
@@ -113,10 +113,10 @@ if view_mode == ADMIN_URL_KEY:
                     
                     for f_name in pdf_files:
                         full_path = os.path.join(pdf_dir, f_name)
-                        upload_time = get_file_time(full_path) # 获取时间
+                        upload_time = get_file_time(full_path) 
                         
                         st.markdown(f"📄 `{f_name}`")
-                        st.caption(f"🕒 上传于: {upload_time}") # 显示时间
+                        st.caption(f"🕒 上传于: {upload_time}") 
                         
                         with open(full_path, "rb") as f:
                             st.download_button(
@@ -147,7 +147,7 @@ if view_mode == ADMIN_URL_KEY:
                             f.write(new_ppt.getbuffer())
                         st.toast(f"✅ 发送成功: {code}")
                         time.sleep(1)
-                        st.rerun() # <--- 上传后刷新页面，该条目会自动移到列表底部
+                        st.rerun()
 
         st.sidebar.markdown("---")
         if st.sidebar.button("🔴 清空所有服务器文件"):
@@ -185,7 +185,15 @@ else:
                 # 显示已上传的文件列表
                 current_pdfs_dir = get_user_path(user_code, "pdfs")
                 existing_pdfs = os.listdir(current_pdfs_dir)
+                
+                # === 仅仅提醒：上传后去评论口令，更快速得到处理 ===
                 if existing_pdfs:
+                    st.success(f"""
+                    **📢 提醒：**  
+                    文件已成功上传！请务必前往原笔记评论区留言您的口令：`{user_code}`，**去笔记留言可以更快速地得到处理。**  
+                    👉 [点击跳转至小红书原笔记留言]({XHS_LINK})
+                    """)
+                    
                     st.write("📋 **已上传文件记录：**")
                     for ep in existing_pdfs:
                         ep_time = get_file_time(os.path.join(current_pdfs_dir, ep))
@@ -197,7 +205,7 @@ else:
                     pdf_save_path = os.path.join(current_pdfs_dir, pdf_file.name)
                     with open(pdf_save_path, "wb") as f:
                         f.write(pdf_file.getbuffer())
-                    st.success(f"✅ 文件 {pdf_file.name} 已上传！请等待管理员处理。")
+                    st.success(f"✅ 文件 {pdf_file.name} 已上传！")
                     time.sleep(1)
                     st.rerun()
             
@@ -208,7 +216,7 @@ else:
                     st.write("✨ 转换已完成，请及时下载：")
                     for pf in ppt_files:
                         pf_path = os.path.join(ppt_dir, pf)
-                        pf_time = get_file_time(pf_path) # 用户也能看到处理时间
+                        pf_time = get_file_time(pf_path) 
                         
                         col1, col2 = st.columns([3, 1])
                         with col1:
@@ -225,7 +233,15 @@ else:
                                 )
                 else:
                     st.info("⌛ 暂无处理好的 PPT。")
-                    st.caption(f"如果您刚刚上传了 PDF，管理员正在处理中，请稍后刷新查看。数据保留 {EXPIRY_HOURS} 小时。")
+                    
+                    # === 仅仅提醒：上传后去评论口令，更快速得到处理 ===
+                    st.info(f"""
+                    **📢 提醒：**  
+                    如果您刚刚上传了文件，请务必前往原笔记评论区留言您的口令：`{user_code}`，**去笔记留言可以更快速地得到处理。**  
+                    👉 [点击跳转至小红书原笔记留言]({XHS_LINK})
+                    """)
+                    st.caption(f"数据保留 {EXPIRY_HOURS} 小时。处理完成后请刷新页面下载。")
+                    
     else:
         st.info("💡 在上方输入提取码即可开始。")
 
