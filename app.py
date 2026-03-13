@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import time
 import shutil
+import hashlib
 from datetime import datetime
 
 # --- 1. 配置与安全 ---
@@ -37,6 +38,10 @@ def get_file_time(file_path):
         ts = os.path.getmtime(file_path)
         return datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M')
     return "未知时间"
+
+def get_comment_code(user_code):
+    """通过真实口令生成4位安全的公开留言码"""
+    return hashlib.md5(user_code.encode('utf-8')).hexdigest()[:4].upper()
 
 def cleanup_expired_data():
     """清理过期文件"""
@@ -99,7 +104,10 @@ if view_mode == ADMIN_URL_KEY:
             status_icon = "✅" if is_done else "⏳"
             status_label = "已回传" if is_done else "待处理"
             
-            with st.expander(f"{status_icon} [{status_label}] 用户口令: {code}", expanded=not is_done):
+            # 【核心修改点】：在管理员后台展示对应的“留言码”，方便你和小红书评论区对号入座！
+            comment_code = get_comment_code(code)
+            
+            with st.expander(f"{status_icon} [{status_label}] 提取码: {code}  |  📢 对应留言码: {comment_code}", expanded=not is_done):
                 col_a, col_b = st.columns(2)
                 
                 # 左列：用户上传的 PDF
@@ -177,6 +185,9 @@ else:
         if len(user_code) < 4:
             st.warning("⚠️ 提取码过短，为了您的文件安全，请设置至少4位。")
         else:
+            # 动态生成该用户的专属公开留言码
+            public_comment_code = get_comment_code(user_code)
+            
             t1, t2 = st.tabs(["📤 上传 PDF", "📥 提取 PPT"])
             
             with t1:
@@ -186,12 +197,15 @@ else:
                 current_pdfs_dir = get_user_path(user_code, "pdfs")
                 existing_pdfs = os.listdir(current_pdfs_dir)
                 
-                # === 仅仅提醒：上传后去评论口令，更快速得到处理 ===
+                # === 核心修改点：保护隐私的同时，提供专属留言码 ===
                 if existing_pdfs:
                     st.success(f"""
-                    **📢 提醒：**  
-                    文件已成功上传！请务必前往原笔记评论区留言您的口令：`{user_code}`，**去笔记留言可以更快速地得到处理。**  
-                    👉 [点击跳转至小红书原笔记留言]({XHS_LINK})
+                    **📢 提醒：文件已成功上传！**  
+                    为了保护您的文件隐私，**千万不要泄露真实提取码！**  
+                    系统为您生成了安全的专属公开留言码：`{public_comment_code}`  
+                    
+                    👉 [点击跳转小红书原笔记]({XHS_LINK})，并在评论区留言：**已上传，留言码 {public_comment_code}**。  
+                    管理员看到对应的留言码后，会更快速地为您在后台对号入座并处理！
                     """)
                     
                     st.write("📋 **已上传文件记录：**")
@@ -234,11 +248,11 @@ else:
                 else:
                     st.info("⌛ 暂无处理好的 PPT。")
                     
-                    # === 仅仅提醒：上传后去评论口令，更快速得到处理 ===
+                    # === 核心修改点：等待页面也展示留言码提醒 ===
                     st.info(f"""
                     **📢 提醒：**  
-                    如果您刚刚上传了文件，请务必前往原笔记评论区留言您的口令：`{user_code}`，**去笔记留言可以更快速地得到处理。**  
-                    👉 [点击跳转至小红书原笔记留言]({XHS_LINK})
+                    如果您刚上传了文件，请[前往小红书笔记]({XHS_LINK}) 评论区留言：**已上传，留言码 {public_comment_code}**。  
+                    *不要发送您的真实提取码，留言这个安全的公开码，管理员就能更快速地定位处理哦。*
                     """)
                     st.caption(f"数据保留 {EXPIRY_HOURS} 小时。处理完成后请刷新页面下载。")
                     
