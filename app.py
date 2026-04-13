@@ -7,7 +7,6 @@ from datetime import datetime
 
 # --- 1. 配置与安全 ---
 BASE_DIR = "data_store"
-EXPIRY_HOURS = 72  
 # 小红书原笔记链接
 XHS_LINK = "https://www.xiaohongshu.com/explore/696f27e7000000000a03ee45?xsec_token=ABft3QO37w_LDTt8J5zePSaog2TSYY1qVxGckdEZeuUpc=&xsec_source=pc_user"
 
@@ -43,19 +42,6 @@ def get_comment_code(user_code):
     """通过真实口令生成4位安全的公开留言码"""
     return hashlib.md5(user_code.encode('utf-8')).hexdigest()[:4].upper()
 
-def cleanup_expired_data():
-    """清理过期文件"""
-    now = time.time()
-    if os.path.exists(BASE_DIR):
-        for code_folder in os.listdir(BASE_DIR):
-            dir_path = os.path.join(BASE_DIR, code_folder)
-            if os.path.isdir(dir_path):
-                # 检查文件夹本身的修改时间（或检查内部文件）
-                if os.path.getmtime(dir_path) < now - (EXPIRY_HOURS * 3600):
-                    shutil.rmtree(dir_path)
-
-cleanup_expired_data()
-
 # --- 3. 页面配置 ---
 st.set_page_config(page_title="PDF-PPT 互助交换站", layout="centered")
 
@@ -67,7 +53,7 @@ view_mode = query_params.get("view", "user")
 
 # A. 管理员后台
 if view_mode == ADMIN_URL_KEY:
-    st.title("🛡️ 管理后台 (72h保留)")
+    st.title("🛡️ 管理后台")
     pwd_input = st.text_input("认证密钥", type="password")
     
     if pwd_input == ADMIN_PWD:
@@ -104,7 +90,6 @@ if view_mode == ADMIN_URL_KEY:
             status_icon = "✅" if is_done else "⏳"
             status_label = "已回传" if is_done else "待处理"
             
-            # 【核心修改点】：在管理员后台展示对应的“留言码”，方便你和小红书评论区对号入座！
             comment_code = get_comment_code(code)
             
             with st.expander(f"{status_icon} [{status_label}] 提取码: {code}  |  📢 对应留言码: {comment_code}", expanded=not is_done):
@@ -174,8 +159,7 @@ else:
         st.markdown(f"""
         1. **互助性质**：本站为人工公益演示，**严禁上传敏感、保密、非法文件**。
         2. **隐私提醒**：请设置**复杂口令**。
-        3. **保留时长**：文件将在服务器保留 **{EXPIRY_HOURS}小时**，过期自动销毁。
-        4. **免责**：管理员不存档文件，因弱口令导致的文件泄漏风险由用户自负。
+        3. **免责**：管理员不存档文件，因弱口令导致的文件泄漏风险由用户自负。
         """)
     
     st.markdown("---")
@@ -197,7 +181,6 @@ else:
                 current_pdfs_dir = get_user_path(user_code, "pdfs")
                 existing_pdfs = os.listdir(current_pdfs_dir)
                 
-                # === 核心修改点：保护隐私的同时，提供专属留言码 ===
                 if existing_pdfs:
                     st.success(f"""
                     **📢 提醒：文件已成功上传！**  
@@ -248,16 +231,15 @@ else:
                 else:
                     st.info("⌛ 暂无处理好的 PPT。")
                     
-                    # === 核心修改点：等待页面也展示留言码提醒 ===
                     st.info(f"""
                     **📢 提醒：**  
                     如果您刚上传了文件，请[前往小红书笔记]({XHS_LINK}) 评论区留言：**已上传，留言码 {public_comment_code}**。  
                     *不要发送您的真实提取码，留言这个安全的公开码，管理员就能更快速地定位处理哦。*
                     """)
-                    st.caption(f"数据保留 {EXPIRY_HOURS} 小时。处理完成后请刷新页面下载。")
+                    st.caption("处理完成后请刷新页面下载。")
                     
     else:
         st.info("💡 在上方输入提取码即可开始。")
 
     st.markdown("---")
-    st.caption(f"🔒 安全模式 | {EXPIRY_HOURS}小时自动销毁记录")
+    st.caption("🔒 安全模式 | 文件由管理员手动管理")
